@@ -7,6 +7,8 @@ public protocol WebKitBridgeViewsProvider {
 
     func createReachabilityView() -> UIView?
 
+    func createErrorView() -> UIView?
+
 }
 
 public extension WebKitBridgeViewsProvider {
@@ -15,6 +17,10 @@ public extension WebKitBridgeViewsProvider {
     }
 
     func createReachabilityView() -> UIView? {
+        return nil
+    }
+
+    func createErrorView() -> UIView? {
         return nil
     }
 }

@@ -68,11 +68,13 @@ open class WebKitBridgeBaseIncomeEventsManager: WebKitBridgeIncomeEventsManager 
 
     public func initialize(info: WebKitBridgeIncomeEventsManagerInitInfo) {
         self.observers = events.map {
+            /// Если это не сделать, то контроллер будет утекать, т.к. info будет жить
+            let onEventFired = info.onEventFired
             let observer = IncomeEventObserver(
                 event: $0,
                 controller: info.controller,
                 onEventFired: {
-                    info.onEventFired?()
+                    onEventFired?()
                 }
             )
 

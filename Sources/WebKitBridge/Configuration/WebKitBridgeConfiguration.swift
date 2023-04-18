@@ -24,7 +24,7 @@ public struct WebKitBridgeModuleConfiguration {
     public let spinnerManagerType: WebKitBridgeSpinnerManager.Type?
 
     /// Events manager to handle income events.
-    public let incomeEventsManager: WebKitBridgeIncomeEventsManager
+    public let incomeEventsManager: WebKitBridgeIncomeEventsManager?
 
     /// Provider of custom views
     public let viewsProvider: WebKitBridgeViewsProvider?
@@ -37,7 +37,7 @@ public struct WebKitBridgeModuleConfiguration {
         designConfiguration: WebKitBridgeDesignConfiguration,
         linkURL: URL,
         spinnerManagerType: WebKitBridgeSpinnerManager.Type?,
-        incomeEventsManager: WebKitBridgeIncomeEventsManager,
+        incomeEventsManager: WebKitBridgeIncomeEventsManager?,
         viewsProvider: WebKitBridgeViewsProvider? = nil,
         reachabilityService: WebKitBridgeReachabilityService? = nil
     ) {

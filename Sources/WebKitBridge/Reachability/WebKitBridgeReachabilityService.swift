@@ -6,6 +6,6 @@ public enum WebKitBridgeReachabilityStatus {
 }
 
 public protocol WebKitBridgeReachabilityService {
-    // Must be currentValueSubject to load link in view properly
+    var currentStatus: WebKitBridgeReachabilityStatus { get }
     var reachabilityStatus: AnyPublisher<WebKitBridgeReachabilityStatus, Never> { get }
 }

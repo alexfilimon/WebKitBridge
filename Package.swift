@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "WebKitBridge",
-    platforms: [.iOS(.v13)],
+    platforms: [.iOS(.v14)],
     products: [
         .library(
             name: "WebKitBridge",

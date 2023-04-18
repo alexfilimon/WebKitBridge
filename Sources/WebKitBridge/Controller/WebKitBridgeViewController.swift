@@ -4,12 +4,6 @@ import Combine
 
 open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDelegate, UIPopoverPresentationControllerDelegate, WKNavigationDelegate, AllPageReloaderManagerDelegate, WebKitBridgeOutcomeEventRunnable {
 
-    // MARK: - Constants
-
-    private enum Constants {
-        static let listenerName = "iosListener"
-    }
-
     // MARK: - Subviews
 
     public private(set) var webView: WKWebView?
@@ -17,22 +11,18 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
     // MARK: - Properties
 
     public let configuration: WebKitBridgeModuleConfiguration
-    public private(set) weak var delegate: WebKitBridgeViewControllerDelegate?
     public private(set) var spinnerManager: WebKitBridgeSpinnerManager?
 
     private var lastTapPosition: CGPoint = .zero
     private var cancellable = Set<AnyCancellable>()
 
     private var reachabilityView: UIView?
-
     private var loadingView: UIView?
+    private var errorView: UIView?
 
     // MARK: - Initialization
 
-    public init(
-        configuration: WebKitBridgeModuleConfiguration,
-        delegate: WebKitBridgeViewControllerDelegate? = nil
-    ) {
+    public init(configuration: WebKitBridgeModuleConfiguration) {
         self.configuration = configuration
         super.init(nibName: nil, bundle: nil)
 
@@ -41,6 +31,10 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     required public init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        webView?.configuration.userContentController.removeAllScriptMessageHandlers()
     }
 
     // MARK: - UIViewController
@@ -53,16 +47,6 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
     open override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         webView?.frame = view.bounds
-    }
-
-    open override func viewWillAppear(_ animated: Bool) {
-        delegate?.viewWillAppear(animated)
-        super.viewWillAppear(animated)
-    }
-
-    open override func viewWillDisappear(_ animated: Bool) {
-        delegate?.viewWillDisappear(animated)
-        super.viewWillDisappear(animated)
     }
 
     open override func present(
@@ -93,7 +77,7 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     open func getWebViewConfig() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        configuration.incomeEventsManager.initialize(
+        configuration.incomeEventsManager?.initialize(
             info: .init(
                 controller: self,
                 contentController: config.userContentController,
@@ -107,6 +91,19 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         )
 
         return config
+    }
+
+    open func reloadWebView() {
+        if
+            let reachability = configuration.reachabilityService,
+            reachability.currentStatus == .noInternet
+        {
+            return
+        }
+        loadingView?.isHidden = false
+        errorView?.isHidden = true
+        spinnerManager?.showSpinner()
+        webView?.reload()
     }
 
     // MARK: - Private methods
@@ -158,6 +155,11 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         if let reachabilityView {
             addSubviewAndConstraints(subview: reachabilityView)
         }
+
+        errorView = configuration.viewsProvider?.createErrorView()
+        if let errorView {
+            addSubviewAndConstraints(subview: errorView)
+        }
     }
 
     private func addSubviewAndConstraints(subview: UIView) {
@@ -173,15 +175,12 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     private func configureReachability() {
         if let reachabilityService = configuration.reachabilityService {
+            configureReachability(status: reachabilityService.currentStatus)
             reachabilityService
                 .reachabilityStatus
                 .receive(on: DispatchQueue.main)
                 .sink(receiveValue: { [weak self] reachabilityStatus in
-                    self?.reachabilityView?.isHidden = reachabilityStatus == .hasInternet
-                    self?.loadingView?.isHidden = true
-                    if reachabilityStatus == .hasInternet {
-                        self?.loadLink()
-                    }
+                    self?.configureReachability(status: reachabilityStatus)
                 })
                 .store(in: &cancellable)
         } else {
@@ -189,8 +188,18 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         }
     }
 
+    private func configureReachability(status: WebKitBridgeReachabilityStatus) {
+        reachabilityView?.isHidden = status == .hasInternet
+        loadingView?.isHidden = true
+        errorView?.isHidden = true
+        if status == .hasInternet {
+            loadLink()
+        }
+    }
+
     private func loadLink() {
         loadingView?.isHidden = false
+        errorView?.isHidden = true
         spinnerManager?.showSpinner()
         DispatchQueue.main.async {
             self.webView?.load(URLRequest(url: self.configuration.linkURL))
@@ -250,16 +259,33 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
     ) {
         spinnerManager?.hideSpinner()
         loadingView?.isHidden = true
+        errorView?.isHidden = true
+    }
 
-        delegate?.didFinishLoadingLink()
+    public func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        errorView?.isHidden = false
+        loadingView?.isHidden = true
+        spinnerManager?.hideSpinner()
+    }
+
+    public func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        errorView?.isHidden = false
+        loadingView?.isHidden = true
+        spinnerManager?.hideSpinner()
     }
 
     // MARK: - AllPageReloaderManagerDelegate
 
     func pageShouldBeReloaded() {
-        loadingView?.isHidden = false
-        spinnerManager?.showSpinner()
-        webView?.reload()
+        reloadWebView()
     }
 
 }
