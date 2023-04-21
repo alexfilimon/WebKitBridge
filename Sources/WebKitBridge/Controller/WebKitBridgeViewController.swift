@@ -67,8 +67,9 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
     // MARK: - WebKitBridgeIncomeEventRunnable
 
     open func run(outcomeEvent: WebKitBridgeOutcomeEvent) {
+        guard let script = outcomeEvent.getScript() else { return }
         webView?.evaluateJavaScript(
-            outcomeEvent.getScript(),
+            script,
             completionHandler: nil
         )
     }
