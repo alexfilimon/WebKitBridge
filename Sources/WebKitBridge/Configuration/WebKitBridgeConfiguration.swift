@@ -36,8 +36,8 @@ public struct WebKitBridgeModuleConfiguration {
     public init(
         designConfiguration: WebKitBridgeDesignConfiguration,
         linkURL: URL,
-        spinnerManagerType: WebKitBridgeSpinnerManager.Type?,
-        incomeEventsManager: WebKitBridgeIncomeEventsManager?,
+        spinnerManagerType: WebKitBridgeSpinnerManager.Type? = nil,
+        incomeEventsManager: WebKitBridgeIncomeEventsManager? = nil,
         viewsProvider: WebKitBridgeViewsProvider? = nil,
         reachabilityService: WebKitBridgeReachabilityService? = nil
     ) {

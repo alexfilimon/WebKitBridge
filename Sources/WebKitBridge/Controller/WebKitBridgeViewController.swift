@@ -2,7 +2,7 @@ import UIKit
 import WebKit
 import Combine
 
-open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDelegate, UIPopoverPresentationControllerDelegate, WKNavigationDelegate, AllPageReloaderManagerDelegate, WebKitBridgeOutcomeEventRunnable {
+open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDelegate, UIPopoverPresentationControllerDelegate, WKNavigationDelegate, AllPageReloaderManagerDelegate, WebKitBridgeOutcomeEventRunnable, WebKitBridgeDOMLoadedDelegate {
 
     // MARK: - Subviews
 
@@ -12,6 +12,13 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     public let configuration: WebKitBridgeModuleConfiguration
     public private(set) var spinnerManager: WebKitBridgeSpinnerManager?
+
+    private var internalIncomeEventsManager = WebKitBridgeBaseIncomeEventsManager(
+        events: [
+            WebKitBridgeDOMLoadedIncomeEvent()
+        ],
+        scriptProvider: NativeJSScriptsProvider()
+    )
 
     private var lastTapPosition: CGPoint = .zero
     private var cancellable = Set<AnyCancellable>()
@@ -74,22 +81,48 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         )
     }
 
+    // MARK: - WebKitBridgeDOMLoadedDelegate
+
+    func _domContentLoaded() {
+        domContentLoaded()
+    }
+
     // MARK: - Methods to override
 
     open func getWebViewConfig() -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
-        configuration.incomeEventsManager?.initialize(
-            info: .init(
-                controller: self,
-                contentController: config.userContentController,
-                onEventFired: { [weak self] in
-                    guard let self = self else { return }
-                    UIView.animate(withDuration: self.configuration.designConfiguration.animationDuration) {
-                        self.view.layoutIfNeeded()
+
+        let allIncomeEventsManagers: [WebKitBridgeIncomeEventsManager] = [
+            configuration.incomeEventsManager,
+            internalIncomeEventsManager
+        ].compactMap { $0 }
+
+        allIncomeEventsManagers.forEach { manager in
+            manager.initialize(
+                info: .init(
+                    controller: self,
+                    contentController: config.userContentController,
+                    onEventFired: { [weak self] in
+                        guard let self = self else { return }
+                        UIView.animate(withDuration: self.configuration.designConfiguration.animationDuration) {
+                            self.view.layoutIfNeeded()
+                        }
                     }
-                }
+                )
             )
+        }
+
+        // need to handle DOM loaded event
+        let source = """
+            var event = new CustomEvent("\(WebKitBridgeDOMLoadedIncomeEvent.staticName)", { });
+            document.dispatchEvent(event);
+        """
+        let userScript = WKUserScript(
+            source: source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
         )
+        config.userContentController.addUserScript(userScript)
 
         return config
     }
@@ -106,6 +139,9 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         spinnerManager?.showSpinner()
         webView?.reload()
     }
+
+    /// Will be called after page loaded and DOM builded
+    open func domContentLoaded() {}
 
     // MARK: - Private methods
 
@@ -143,7 +179,6 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         webView?.scrollView.contentInsetAdjustmentBehavior = .always
         webView?.scrollView.showsHorizontalScrollIndicator = false
         webView?.scrollView.showsVerticalScrollIndicator = false
-        
     }
 
     private func configureViewProvider() {
@@ -203,7 +238,15 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         errorView?.isHidden = true
         spinnerManager?.showSpinner()
         DispatchQueue.main.async {
-            self.webView?.load(URLRequest(url: self.configuration.linkURL))
+            let url = self.configuration.linkURL
+            if url.scheme == "file" {
+                self.webView?.loadFileURL(
+                    url,
+                    allowingReadAccessTo: url
+                )
+            } else {
+                self.webView?.load(URLRequest(url: url))
+            }
         }
     }
 
