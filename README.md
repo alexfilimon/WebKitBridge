@@ -1,29 +1,43 @@
 # WebKitBridge
 
+![](./Resources/wk_logo.jpg)
+
 Package for working with `WKWebView` and for communicating between JS and Swift.
 
-## Proper configuration
+## Entities
 
-`WebKitBridgeViewController` class have constructor with two params:
-- configuration
-- delegate
+### WebKitBridgeViewController
 
-Configuration provide a lot of possibilities for customizing your webview:
-- design through desigh config (color and animation duration)
-- URL for opening
-- spinner manager for showing spinner while loading for users
-- array of income events and scripts provider (events JS -> Swift)
-- custom user agent
-- views provider - customize view for no internet state and view for loading state
-- reachability service - handling no internet state
-- navigation item modifier
+## How to use
 
-## How to add outcome event (Swift -> JS)
+### Swift -> JS (OutcomeEvent)
 
-Just realize protocol `WebKitBridgeOutcomeEvent` and call method `run(outcomeEvent:)` in `WebKitBridgeViewController` class
+1. Implement protocol `WebKitBridgeOutcomeEvent` with function `getScript()`. Just return JS code in it as proper String.
+2. Inside `WebKitBridgeViewController` call method `run(outcomeEvent:)` and pass your protocol implementation
 
-## How to add income event (JS -> Swift)
+### JS -> Swift (IncomeEvent)
 
-- Realize protocol `WebKitBridgeIncomeEvent`
-- Make some actions when method `fire` will be called by system
-- Pass these new protocol realization to configuration when `WebKitBridgeViewController` is initializing
+1. Implement protocol `WebKitBridgeIncomeEvent`. 
+2. When initalize `WebKitBridgeViewController` pass real `WebKitBridgeIncomeEventsManager` with events (for example `WebKitBridgeBaseIncomeEventsManager`).
+3. React on method `fire` in protocol `WebKitBridgeIncomeEvent` implementation.
+
+## Configuration
+
+- `designConfiguration` - config for design
+- `linkURL` - url to open
+- `spinnerManagerType` - type of entity, that will be initialized to display/hide spinner
+- `incomeEventsManager` - entity for creating and managing income events
+- `viewsProvider` - entity for creating loading/reachability/error views
+- `reachabilityService` - entity for providing info about reachability
+
+## WebKitBridgeViewController
+
+Controller, that containt `WKWebview`.
+
+### Method to override
+
+- `domContentLoaded` - called when dom contend loaded (like `viewDidAppear`) 
+
+## AllPageReloaderManager
+
+Manager for reloading all webviews.

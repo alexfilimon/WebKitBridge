@@ -1,6 +1,5 @@
 import UIKit
 
-// TODO: add controls view
 public protocol WebKitBridgeViewsProvider {
 
     func createLoadingView() -> UIView?
