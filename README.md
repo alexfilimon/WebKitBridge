@@ -4,10 +4,6 @@
 
 Package for working with `WKWebView` and for communicating between JS and Swift.
 
-## Entities
-
-### WebKitBridgeViewController
-
 ## How to use
 
 ### Swift -> JS (OutcomeEvent)
