@@ -37,7 +37,9 @@ final class AllPageReloaderManager {
 
     func subscribe(delegate: AllPageReloaderManagerDelegate) {
         normalize()
-        delegates.append(.init(value: delegate))
+        if !delegates.contains(where: { $0.value === delegate }) {
+            delegates.append(.init(value: delegate))
+        }
     }
 
     func setNeedsReloadAllPages(except: AllPageReloaderManagerDelegate? = nil) {

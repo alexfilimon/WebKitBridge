@@ -4,6 +4,18 @@ import Combine
 
 open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDelegate, UIPopoverPresentationControllerDelegate, WKNavigationDelegate, AllPageReloaderManagerDelegate, WebKitBridgeOutcomeEventRunnable, WebKitBridgeDOMLoadedDelegate {
 
+    // MARK: - Nested Types
+
+    public enum State {
+        // Нужен, чтобы при начальном изменении на loading началась загрузка
+        case initial
+        
+        case loading
+        case noInternet
+        case error
+        case content
+    }
+
     // MARK: - Subviews
 
     public private(set) var webView: WKWebView?
@@ -20,12 +32,28 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         scriptProvider: NativeJSScriptsProvider()
     )
 
+    private var stateChangeCompletions: [(State) -> Void] = []
+
     private var lastTapPosition: CGPoint = .zero
     private var cancellable = Set<AnyCancellable>()
 
     private var reachabilityView: UIView?
     private var loadingView: UIView?
     private var errorView: UIView?
+
+    private(set) var state: State = .initial {
+        didSet {
+            guard state != oldValue else { return }
+            updateSubviewsVisibility()
+
+            if state == .loading {
+                loadLink()
+            }
+
+            stateChangeCompletions.forEach { $0(state) }
+        }
+    }
+    private var reloadAfterInternetAppearance = false
 
     // MARK: - Initialization
 
@@ -48,7 +76,9 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     open override func viewDidLoad() {
         super.viewDidLoad()
-        configureAppearance()
+        Task {
+            await recreateWebView()
+        }
     }
 
     open override func viewDidLayoutSubviews() {
@@ -89,7 +119,11 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     // MARK: - Methods to override
 
-    open func getWebViewConfig() -> WKWebViewConfiguration {
+    /// Override, if needed changes to `WKWebViewConfiguration` - for example change storage.
+    /// This method called inside `recreateWebView()`. So to apply changes on this code, you need to
+    /// call `recreateWebView()` if you need changes after `viewDidLoad` - for example on button press
+    /// you need to change storage.
+    open func getWebViewConfig() async -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
 
         let allIncomeEventsManagers: [WebKitBridgeIncomeEventsManager] = [
@@ -127,21 +161,45 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         return config
     }
 
+    /// Reloads current instance of `WKWebView`. If you need to recreate `WKWebView` from scratch use
+    /// method `recreateWebView()` instead
     open func reloadWebView() {
         if
             let reachability = configuration.reachabilityService,
             reachability.currentStatus == .noInternet
         {
+            reloadAfterInternetAppearance = true
             return
         }
-        loadingView?.isHidden = false
-        errorView?.isHidden = true
-        spinnerManager?.showSpinner()
-        webView?.reload()
+        state = .loading
     }
 
-    /// Will be called after page loaded and DOM builded
+    /// Will be called after page loaded and DOM builded. Override this method to
+    /// make some configuration after page loaded. For example, for showing/hiding some
+    /// custom UI.
     open func domContentLoaded() {}
+
+    /// Call to react on state change. For example to show loading indicator or change
+    /// enabled property of reload button.
+    open func reactOnStateChange(_ completion: @escaping (State) -> Void) {
+        stateChangeCompletions.append(completion)
+    }
+
+    /// Method for recreating `WKWebView` from scratch. Call `getWebViewConfig()` inside.
+    /// So you can call this method to apply changes to `WKWebViewConfiguration`.
+    /// This method automatically called on `viewDidLoad()` first time. Next time you
+    /// can call this method manually.
+    open func recreateWebView() async {
+        state = .initial
+        reloadAfterInternetAppearance = false
+
+        await configureWebView()
+        configureViewProvider()
+        configureReachability()
+        AllPageReloaderManager.shared.subscribe(delegate: self)
+
+        // link will be loaded inside reachbility publisher
+    }
 
     // MARK: - Private methods
 
@@ -157,21 +215,11 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         }
     }
 
-    private func configureAppearance() {
-        configureWebView()
-        configureViewProvider()
-        configureReachability()
-        AllPageReloaderManager.shared.subscribe(delegate: self)
+    private func configureWebView() async {
+        webView?.removeFromSuperview()
+        webView = nil
 
-        let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(webViewTapped(_:)))
-        tapGestureRecognizer.delegate = self
-        webView?.addGestureRecognizer(tapGestureRecognizer)
-
-        // link will be loaded inside reachbility publisher
-    }
-
-    private func configureWebView() {
-        webView = WKWebView(frame: .zero, configuration: getWebViewConfig())
+        webView = WKWebView(frame: .zero, configuration: await getWebViewConfig())
         view.addSubview(webView!)
         view.sendSubviewToBack(webView!)
         webView?.navigationDelegate = self
@@ -179,6 +227,10 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         webView?.scrollView.contentInsetAdjustmentBehavior = .always
         webView?.scrollView.showsHorizontalScrollIndicator = false
         webView?.scrollView.showsVerticalScrollIndicator = false
+
+        let tapGestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(webViewTapped(_:)))
+        tapGestureRecognizer.delegate = self
+        webView?.addGestureRecognizer(tapGestureRecognizer)
     }
 
     private func configureViewProvider() {
@@ -198,6 +250,18 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         }
     }
 
+    private func updateSubviewsVisibility() {
+        loadingView?.isHidden = state != .loading
+        errorView?.isHidden = state != .error
+        reachabilityView?.isHidden = state != .noInternet
+
+        if state == .loading {
+            spinnerManager?.showSpinner()
+        } else {
+            spinnerManager?.hideSpinner()
+        }
+    }
+
     private func addSubviewAndConstraints(subview: UIView) {
         view.addSubview(subview)
         subview.translatesAutoresizingMaskIntoConstraints = false
@@ -211,32 +275,36 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
 
     private func configureReachability() {
         if let reachabilityService = configuration.reachabilityService {
-            configureReachability(status: reachabilityService.currentStatus)
+            checkReachability(status: reachabilityService.currentStatus)
             reachabilityService
                 .reachabilityStatus
+                .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink(receiveValue: { [weak self] reachabilityStatus in
-                    self?.configureReachability(status: reachabilityStatus)
+                    // если пришел что интернета нет, а у нас уже загружена страница, то наверно не нужно ее перезагружать?
+                    self?.checkReachability(status: reachabilityStatus)
                 })
                 .store(in: &cancellable)
         } else {
-            loadLink()
+            state = .loading
         }
     }
 
-    private func configureReachability(status: WebKitBridgeReachabilityStatus) {
-        reachabilityView?.isHidden = status == .hasInternet
-        loadingView?.isHidden = true
-        errorView?.isHidden = true
-        if status == .hasInternet {
-            loadLink()
+    private func checkReachability(status: WebKitBridgeReachabilityStatus) {
+        switch status {
+        case .hasInternet:
+            if state != .content || reloadAfterInternetAppearance {
+                state = .loading
+                reloadAfterInternetAppearance = false
+            }
+        case .noInternet:
+            if state != .content {
+                state = .noInternet
+            }
         }
     }
 
     private func loadLink() {
-        loadingView?.isHidden = false
-        errorView?.isHidden = true
-        spinnerManager?.showSpinner()
         DispatchQueue.main.async {
             let url = self.configuration.linkURL
             if url.scheme == "file" {
@@ -301,9 +369,7 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         _ webView: WKWebView,
         didFinish navigation: WKNavigation!
     ) {
-        spinnerManager?.hideSpinner()
-        loadingView?.isHidden = true
-        errorView?.isHidden = true
+        state = .content
     }
 
     public func webView(
@@ -311,9 +377,9 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
-        errorView?.isHidden = false
-        loadingView?.isHidden = true
-        spinnerManager?.hideSpinner()
+        if state != .noInternet {
+            state = .error
+        }
     }
 
     public func webView(
@@ -321,9 +387,9 @@ open class WebKitBridgeViewController: UIViewController, UIGestureRecognizerDele
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
-        errorView?.isHidden = false
-        loadingView?.isHidden = true
-        spinnerManager?.hideSpinner()
+        if state != .noInternet {
+            state = .error
+        }
     }
 
     // MARK: - AllPageReloaderManagerDelegate
